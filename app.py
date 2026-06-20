@@ -1,236 +1,177 @@
 from flask import Flask, request, redirect, session
-import mysql.connector
+
+import sqlite3
 
 app = Flask(__name__)
-app.secret_key = "secret123"
+app.secret_key = "church_secret_key"
 
-db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="Mwangangi1.",
-    database="church_db"
-)
 
-cursor = db.cursor()
+# DATABASE CONNECTION
+def get_db_connection():
+    conn = sqlite3.connect("church.db")
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# ---------------- LOGIN ----------------
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
 
-        if username == "admin" and password == "admin123":
-            session['user'] = username
-            return redirect('/')
-        return "Invalid login"
+# CREATE TABLE
+def create_tables():
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    return '''
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL
+    )
+    """)
 
-    <div class="container mt-5">
-        <div class="card p-4 shadow" style="max-width:400px;margin:auto;">
-            <h3 class="text-center">Admin Login</h3>
-            <form method="POST">
-                <input class="form-control mb-2" name="username" placeholder="Username">
-                <input class="form-control mb-3" name="password" type="password" placeholder="Password">
-                <button class="btn btn-primary w-100">Login</button>
-            </form>
-        </div>
-    </div>
-    '''
+    conn.commit()
+    conn.close()
 
-# ---------------- LOGOUT ----------------
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect('/login')
 
-# ---------------- DASHBOARD ----------------
-@app.route('/')
+create_tables()
+
+
+# HOME PAGE
+@app.route("/")
 def home():
-    if 'user' not in session:
-        return redirect('/login')
+    return """
+    <h1>Church Management System</h1>
 
-    cursor.execute("SELECT COUNT(*) FROM members")
-    total = cursor.fetchone()[0]
+    <p>Welcome to our Church Website</p>
 
-    return f'''
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <a href="/register">Register</a><br><br>
+    <a href="/login">Login</a>
+    """
 
-    <div class="d-flex">
 
-        <!-- SIDEBAR -->
-        <div class="bg-dark text-white p-3 vh-100" style="width:220px;">
-            <h4>Church Admin</h4>
-            <hr>
-            <a class="text-white d-block" href="/">Dashboard</a>
-            <a class="text-white d-block" href="/register">Register</a>
-            <a class="text-white d-block" href="/members">Members</a>
-            <a class="text-white d-block" href="/logout">Logout</a>
-        </div>
-
-        <!-- MAIN -->
-        <div class="p-4 w-100">
-
-            <h2>Dashboard Overview</h2>
-
-            <div class="row mt-4">
-
-                <div class="col-md-4">
-                    <div class="card text-white bg-primary p-3">
-                        <h4>Total Members</h4>
-                        <h2>{total}</h2>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="card text-white bg-success p-3">
-                        <h4>System Status</h4>
-                        <h2>Active</h2>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="card text-white bg-warning p-3">
-                        <h4>Admin</h4>
-                        <h2>Online</h2>
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-    </div>
-    '''
-
-# ---------------- REGISTER ----------------
-@app.route('/register', methods=['GET', 'POST'])
+# REGISTER
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if 'user' not in session:
-        return redirect('/login')
 
-    if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
+    if request.method == "POST":
+        name = request.form["name"]
+        email = request.form["email"]
+        password = request.form["password"]
 
-        cursor.execute("INSERT INTO members (name, email) VALUES (%s, %s)", (name, email))
-        db.commit()
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
 
-        return redirect('/members')
+            cursor.execute(
+                "INSERT INTO members (name,email,password) VALUES (?,?,?)",
+                (name, email, password)
+            )
 
-    return '''
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            conn.commit()
+            conn.close()
 
-    <div class="container mt-5">
-        <div class="card p-4 shadow">
-            <h3>Register Member</h3>
-            <form method="POST">
-                <input class="form-control mb-2" name="name" placeholder="Name">
-                <input class="form-control mb-3" name="email" placeholder="Email">
-                <button class="btn btn-primary">Save</button>
-            </form>
-        </div>
-    </div>
-    '''
+            return """
+            <h2>Member Registered Successfully</h2>
+            <a href='/login'>Login Here</a>
+            """
 
-# ---------------- MEMBERS ----------------
-@app.route('/members')
-def members():
-    if 'user' not in session:
-        return redirect('/login')
+        except:
+            return "Email already exists"
 
-    cursor.execute("SELECT * FROM members")
-    data = cursor.fetchall()
+    return """
+    <h2>Member Registration</h2>
 
-    rows = ""
+    <form method="POST">
 
-    for row in data:
-        rows += f"""
-        <tr>
-            <td>{row[0]}</td>
-            <td>{row[1]}</td>
-            <td>{row[2]}</td>
-            <td>
-                <a class="btn btn-warning btn-sm" href="/edit/{row[0]}">Edit</a>
-                <a class="btn btn-danger btn-sm" href="/delete/{row[0]}">Delete</a>
-            </td>
-        </tr>
-        """
+        Name:<br>
+        <input type="text" name="name"><br><br>
 
-    return f'''
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        Email:<br>
+        <input type="email" name="email"><br><br>
 
-    <div class="d-flex">
+        Password:<br>
+        <input type="password" name="password"><br><br>
 
-        <div class="bg-dark text-white p-3 vh-100" style="width:220px;">
-            <h4>Church Admin</h4>
-            <a class="text-white d-block" href="/">Dashboard</a>
-            <a class="text-white d-block" href="/register">Register</a>
-            <a class="text-white d-block" href="/members">Members</a>
-            <a class="text-white d-block" href="/logout">Logout</a>
-        </div>
+        <input type="submit" value="Register">
 
-        <div class="p-4 w-100">
-            <h2>Members List</h2>
+    </form>
+    """
 
-            <table class="table table-bordered table-striped">
-                <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Actions</th>
-                </tr>
-                {rows}
-            </table>
-        </div>
 
-    </div>
-    '''
+# LOGIN
+@app.route("/login", methods=["GET", "POST"])
+def login():
 
-# ---------------- DELETE ----------------
-@app.route('/delete/<int:id>')
-def delete(id):
-    if 'user' not in session:
-        return redirect('/login')
+    if request.method == "POST":
 
-    cursor.execute("DELETE FROM members WHERE id=%s", (id,))
-    db.commit()
-    return redirect('/members')
+        email = request.form["email"]
+        password = request.form["password"]
 
-# ---------------- EDIT ----------------
-@app.route('/edit/<int:id>', methods=['GET', 'POST'])
-def edit(id):
-    if 'user' not in session:
-        return redirect('/login')
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
+        cursor.execute(
+            "SELECT * FROM members WHERE email=? AND password=?",
+            (email, password)
+        )
 
-        cursor.execute("UPDATE members SET name=%s, email=%s WHERE id=%s", (name, email, id))
-        db.commit()
+        member = cursor.fetchone()
 
-        return redirect('/members')
+        conn.close()
 
-    cursor.execute("SELECT * FROM members WHERE id=%s", (id,))
-    member = cursor.fetchone()
+        if member:
+            session["member_id"] = member["id"]
+            session["member_name"] = member["name"]
 
-    return f'''
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            return redirect("/dashboard")
 
-    <div class="container mt-5">
-        <div class="card p-4 shadow">
-            <h3>Edit Member</h3>
-            <form method="POST">
-                <input class="form-control mb-2" name="name" value="{member[1]}">
-                <input class="form-control mb-3" name="email" value="{member[2]}">
-                <button class="btn btn-success">Update</button>
-            </form>
-        </div>
-    </div>
-    '''
+        return "Invalid Login Details"
 
-# ---------------- RUN ----------------
+    return """
+    <h2>Member Login</h2>
+
+    <form method="POST">
+
+        Email:<br>
+        <input type="email" name="email"><br><br>
+
+        Password:<br>
+        <input type="password" name="password"><br><br>
+
+        <input type="submit" value="Login">
+
+    </form>
+    """
+
+
+# DASHBOARD
+@app.route("/dashboard")
+def dashboard():
+
+    if "member_id" not in session:
+        return redirect("/login")
+
+    return f"""
+    <h1>Church Dashboard</h1>
+
+    <h3>Welcome {session['member_name']}</h3>
+
+    <ul>
+        <li>Prayer Requests</li>
+        <li>Events</li>
+        <li>Sermons</li>
+        <li>Announcements</li>
+        <li>Online Donations</li>
+    </ul>
+
+    <a href="/logout">Logout</a>
+    """
+
+
+# LOGOUT
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+
 if __name__ == "__main__":
     app.run(debug=True)
